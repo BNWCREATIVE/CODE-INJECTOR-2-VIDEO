@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Code Renderer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Noto+Sans+JP:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: dark; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000000; overflow: hidden;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* --- SELECTION STYLE --- */
+        ::selection {
+            background-color: #00ffa5; /* Бирюзовый фон выделения */
+            color: #000; /* Черный текст при выделении */
+        }
+        
+        /* --- MAIN CANVAS AREA --- */
+        #frame-container {
+            width: 100vw; 
+            height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            background-color: #050505;
+            background-image: linear-gradient(45deg, #0a0a0a 25%, transparent 25%, transparent 75%, #0a0a0a 75%, #0a0a0a), 
+                              linear-gradient(45deg, #0a0a0a 25%, transparent 25%, transparent 75%, #0a0a0a 75%, #0a0a0a);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+        }
+        
+        #frame-wrapper {
+            display: flex; justify-content: center; align-items: center;
+            transform-origin: center center;
+            transition: transform 0.3s ease;
+        }
+        
+        iframe {
+            border: none; background: #000;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            flex-shrink: 0; margin: 0; padding: 0; display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* --- CENTER HOVER TRIGGER --- */
+        #center-trigger-zone {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px; height: 200px;
+            z-index: 10;
+            display: flex; justify-content: center; align-items: center;
+        }
+        #center-btn {
+            background-color: rgba(0, 0, 0, 0.25); /* Полупрозрачный фон для эффекта стекла */
+            backdrop-filter: blur(12px); /* Сильное матовое размытие */
+            -webkit-backdrop-filter: blur(12px);
+            color: #00ffa5;
+            border: 2px solid #00ffa5;
+            padding: 10px 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px; 
+            font-weight: bold; letter-spacing: 2px;
+            cursor: pointer;
+            opacity: 0; pointer-events: none;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+        #center-trigger-zone:hover #center-btn { 
+            opacity: 1; 
+            pointer-events: auto; 
+            box-shadow: 0 0 15px rgba(0, 255, 165, 0.2), inset 0 0 10px rgba(0, 255, 165, 0.1); 
+        }
+        #center-btn:hover { 
+            background-color: rgba(0, 255, 165, 0.05); /* Едва заметный оттенок вместо сплошного неона */
+            color: #00ffa5; 
+            box-shadow: inset 0 0 25px rgba(0, 255, 165, 0.6), 0 0 10px rgba(0, 255, 165, 0.2); /* Глубокое внутреннее свечение */
+            text-shadow: 0 0 8px rgba(0, 255, 165, 0.5); /* Легкое свечение самого текста */
+        }
+
+        /* --- SIDE PANEL (МАТОВОЕ СТЕКЛО) --- */
+        #side-panel {
+            position: fixed;
+            top: 0; right: -420px;
+            width: 420px; height: 100vh;
+            background-color: rgba(0, 0, 0, 0.25); /* Полупрозрачный фон как у кнопки */
+            backdrop-filter: blur(12px); /* Эффект матового стекла */
+            -webkit-backdrop-filter: blur(12px);
+            border-left: 1px solid rgba(255, 255, 255, 0.1); /* Тонкий блик грани стекла */
+            z-index: 20;
+            display: flex; flex-direction: column;
+            transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            box-shadow: 0 0 0 rgba(0,0,0,0); /* Полностью скрываем тень, когда меню закрыто */
+            color: #fff;
+        }
+        #side-panel.open { 
+            right: 0; 
+            box-shadow: -5px 0 20px rgba(0, 0, 0, 0.4); /* Аккуратная, компактная тень только при открытом меню */
+        }
+
+        /* Header */
+        .panel-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 25px; 
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05); 
+            background-color: rgba(0, 0, 0, 0.3); /* Полупрозрачное затемнение */
+        }
+        .panel-header h2 { margin: 0; font-size: 15px; letter-spacing: 2px; color: #fff; text-transform: uppercase; }
+        .close-btn {
+            background: none; border: none; color: #888;
+            font-size: 24px; font-weight: bold; cursor: pointer;
+            padding: 0; margin: 0; line-height: 1; transition: color 0.2s;
+        }
+        .close-btn:hover { color: #00ffa5; }
+
+        /* Body */
+        .panel-body {
+            padding: 25px 25px 15px 25px; display: flex; flex-direction: column;
+            flex-grow: 1; overflow-y: auto;
+        }
+        .panel-body::-webkit-scrollbar { width: 6px; }
+        .panel-body::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+        
+        .control-group { margin-bottom: 20px; display: flex; flex-direction: column; }
+        .control-group.flex-grow { flex-grow: 1; margin-bottom: 0; }
+        .control-group label { font-size: 10px; color: #aaa; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase; }
+        
+        .controls-wrapper { display: flex; gap: 12px; align-items: center; }
+
+        .warning-text { color: #ff3333; font-size: 10px; margin-top: 8px; display: none; font-weight: bold; letter-spacing: 1px; }
+
+        /* Action Labels (Copy/Paste/Reset) */
+        .action-label {
+            cursor: pointer; 
+            color: #00ffa5; 
+            font-weight: bold;
+            transition: text-shadow 0.2s;
+        }
+        .action-label:hover {
+            text-shadow: 0 0 8px rgba(0, 255, 165, 0.5);
+        }
+
+        /* Inputs & Selects (Тоже стеклянные) */
+        input[type="text"], select {
+            width: 100%; height: 42px; padding: 0 12px 0 15px;
+            background-color: rgba(0, 0, 0, 0.4); color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+            font-family: 'Orbitron', sans-serif; font-size: 12px; 
+            outline: none; box-sizing: border-box; transition: border-color 0.2s;
+            text-transform: uppercase; /* Добавлено принудительное преобразование в заглавные */
+        }
+        input[type="text"]:focus, select:hover, select:focus { border-color: #00ffa5; }
+
+        select {
+            appearance: none; -webkit-appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg width="12" height="12" viewBox="0 0 24 24" fill="%23aaa" xmlns="http://www.w3.org/2000/svg"><polygon points="3,7 12,18 21,7"></polygon></svg>');
+            background-repeat: no-repeat; background-position: right 12px center; cursor: pointer;
+        }
+        select option { background-color: #111; color: #fff; } /* Для выпадающего списка цвет должен быть плотным */
+
+        /* Button Inject */
+        button#btn-fetch-url {
+            flex: 0 0 80px; height: 42px; 
+            background-color: rgba(0, 0, 0, 0.4); color: #00ffa5; 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+            font-family: 'Orbitron', sans-serif; font-size: 11px; 
+            font-weight: bold; cursor: pointer; transition: all 0.2s;
+        }
+        button#btn-fetch-url:hover { background-color: rgba(0, 255, 165, 0.1); border-color: #00ffa5; }
+
+        .btn-fetching {
+            border-color: #00ffa5 !important;
+            animation: fetchPulse 0.6s infinite alternate !important;
+        }
+        @keyframes fetchPulse {
+            0% { box-shadow: inset 0 0 2px rgba(0, 255, 165, 0.1); }
+            100% { box-shadow: inset 0 0 18px rgba(0, 255, 165, 0.8); } /* Пульсация теперь направлена внутрь */
+        }
+
+        /* Code Editor */
+        textarea#code-input {
+            width: 100%; flex-grow: 1; min-height: 200px; padding: 15px; 
+            background-color: rgba(0, 0, 0, 0.4); color: #00ffcc; 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+            font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;
+            outline: none; resize: vertical; box-sizing: border-box; white-space: pre;
+            tab-size: 2; transition: border-color 0.2s;
+        }
+        textarea#code-input:focus { border-color: #00ffa5; }
+        textarea#code-input::-webkit-scrollbar { width: 8px; }
+        textarea#code-input::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-left: 1px solid rgba(255,255,255,0.05); }
+        textarea#code-input::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+
+        /* Footer Buttons */
+        .panel-footer {
+            padding: 15px 25px 20px 25px; 
+            background-color: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.05); 
+            display: flex; align-items: stretch; gap: 10px;
+        }
+        
+        .panel-footer button { 
+            flex: 1; 
+            padding: 15px 0; 
+            font-family: 'Orbitron', sans-serif; 
+            font-weight: bold; 
+            font-size: 16px; 
+            letter-spacing: 3px;
+            cursor: pointer; 
+            transition: all 0.2s; 
+            margin: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+        }
+
+        .panel-footer button#btn-preview { 
+            background-color: rgba(0, 0, 0, 0.5); color: #aaa; 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+        }
+        .panel-footer button#btn-preview:hover { 
+            background-color: rgba(0, 0, 0, 0.8); 
+            border-color: #00ffa5; 
+            color: #00ffa5; 
+            box-shadow: 0 0 15px rgba(0, 255, 165, 0.2);
+        }
+
+        /* Огромная кнопка EXPORT */
+        .panel-footer button#btn-render { 
+            background-color: rgba(0, 0, 0, 0.5); color: #aaa; 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+        }
+        .panel-footer button#btn-render:hover { 
+            background-color: rgba(0, 0, 0, 0.8); 
+            border-color: #00ffa5; 
+            color: #00ffa5; 
+            box-shadow: 0 0 15px rgba(0, 255, 165, 0.2); 
+        }
+        
+        .panel-footer button#btn-render.btn-recording {
+            background-color: #00ffa5 !important;
+            border-color: #00ffa5 !important;
+            color: #000 !important;
+            box-shadow: 0 0 20px rgba(0, 255, 165, 0.6) !important;
+            animation: recPulseTurq 1s infinite alternate;
+        }
+
+        @keyframes recPulseTurq { 0% { opacity: 1; } 100% { opacity: 0.7; } }
+
+        /* --- RECORDING INDICATOR --- */
+        #record-indicator {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background-color: #ff0044; color: #fff;
+            padding: 12px 24px; font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: bold; letter-spacing: 2px;
+            border: 1px solid #ff0044; border-radius: 2px;
+            cursor: pointer; z-index: 100; display: none;
+            animation: recPulse 1.5s infinite alternate;
+            box-shadow: 0 0 20px rgba(255, 0, 68, 0.4); text-transform: uppercase;
+        }
+        #record-indicator:hover { background-color: #000; color: #ff0044; }
+        @keyframes recPulse { 0% { opacity: 1; } 100% { opacity: 0.7; } }
+
+        /* --- CUSTOM MODAL --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            display: none; justify-content: center; align-items: center; z-index: 9999;
+        }
+        .modal-box {
+            background: rgba(10, 10, 10, 0.9); border: 2px solid #ff0044; padding: 30px;
+            max-width: 450px; width: 90%; color: #fff; font-family: 'JetBrains Mono', monospace;
+            box-shadow: 0 0 30px rgba(255, 0, 68, 0.3); text-align: left;
+        }
+        .modal-box h3 { 
+            color: #ff0044; margin-top: 0; font-family: 'Orbitron', sans-serif; 
+            letter-spacing: 2px; font-size: 18px; text-transform: uppercase;
+        }
+        .modal-box p { 
+            font-size: 13px; 
+            line-height: 1.6; 
+            color: #ccc; 
+            white-space: pre-wrap; /* Добавлено для сохранения переносов строк \n */
+        }
+        .modal-box button {
+            background: #ff0044; color: #fff; border: none; padding: 12px;
+            font-family: 'Orbitron', sans-serif; font-weight: bold; cursor: pointer;
+            margin-top: 20px; width: 100%; transition: all 0.2s; letter-spacing: 2px;
+        }
+        .modal-box button:hover { background: #fff; color: #ff0044; box-shadow: 0 0 15px rgba(255, 0, 68, 0.5); }
+
+    </style>
+</head>
+<body>
+
+<!-- Custom Modal -->
+<div id="custom-modal" class="modal-overlay">
+    <div class="modal-box">
+        <h3 id="modal-title">ERROR</h3>
+        <p id="modal-desc"></p>
+        <button id="modal-close">OK</button>
+    </div>
+</div>
+
+<!-- Индикатор записи -->
+<div id="record-indicator">🔴 RECORDING... 00:00 /CLICK TO STOP/</div>
+
+<!-- Триггер по центру -->
+<div id="center-trigger-zone">
+    <button id="center-btn">CODE INJECTOR</button>
+</div>
+
+<!-- Холст -->
+<div id="frame-container">
+    <div id="frame-wrapper">
+        <iframe id="render-frame"></iframe>
+    </div>
+</div>
+
+<!-- Боковая панель -->
+<div id="side-panel">
+    <div class="panel-header">
+        <h2>RENDER CONTROL PANEL</h2>
+        <button class="close-btn" id="btn-close-panel">✕</button>
+    </div>
+    
+    <div class="panel-body">
+        <div class="control-group">
+            <label>RESOLUTION:</label>
+            <select id="ctrl-resolution">
+                <option value="FIT" selected>100% FIT BROWSER WINDOW</option>
+                <option value="1920x1080">1920 X 1080 FULL HD HORIZONTAL</option>
+                <option value="1080x1920">1080 X 1920 FULL HD VERTICAL SHORTS</option>
+                <option value="1080x1080">1080 X 1080 SQUARE</option>
+                <option value="3840x2160">3840 X 2160 4K UHD</option>
+            </select>
+            <div id="4k-warning" class="warning-text">WARNING: 4K UHD MAY LAG. REDUCE FPS.</div>
+        </div>
+
+        <div class="control-group">
+            <div style="display: flex; justify-content: space-between;">
+                <label style="flex: 1;">PROJECT NAME</label>
+                <label style="flex: 1; padding-left: 12px;">DURATION</label>
+            </div>
+            <div class="controls-wrapper">
+                <input type="text" id="ctrl-filename" value="NAME_RENDER" style="flex: 1; text-transform: uppercase;">
+                <select id="ctrl-duration" style="flex: 1;">
+                    <option value="manual">MANUAL STOP</option>
+                    <option value="10">10 SECONDS</option>
+                    <option value="15">15 SECONDS</option>
+                    <option value="20">20 SECONDS</option>
+                    <option value="30" selected>30 SECONDS</option>
+                    <option value="60">60 SECONDS</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div style="display: flex; justify-content: space-between;">
+                <label style="flex: 1;">EXPORT FORMAT</label>
+                <label style="flex: 1; padding-left: 12px;">FRAMERATE</label>
+            </div>
+            <div class="controls-wrapper">
+                <select id="ctrl-format">
+                    <option value="mp4" selected>MP4 VIDEO</option>
+                    <option value="webm">WEBM ALPHA</option>
+                </select>
+                <select id="ctrl-fps">
+                    <option value="60" selected>60 FPS</option>
+                    <option value="30">30 FPS</option>
+                    <option value="25">25 FPS</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- БЛОК: ИНЖЕКТОР ИЗ URL -->
+        <div class="control-group">
+            <label>INJECT FROM URL:</label>
+            <div class="controls-wrapper">
+                <input type="text" id="ctrl-url-inject" placeholder="https://example.com/animation/index.html" style="flex: 1; text-transform: none; font-family: 'JetBrains Mono', monospace;">
+                <button id="btn-fetch-url">FETCH</button>
+            </div>
+        </div>
+
+        <div class="control-group flex-grow">
+            <div style="display: flex; justify-content: space-between;">
+                <label>
+                    <span id="btn-copy" class="action-label">COPY</span> / 
+                    <span id="btn-paste" class="action-label">PASTE</span> 
+                    SCRIPT HERE
+                </label>
+                <label id="btn-reset" class="action-label">RESET</label>
+            </div>
+            <textarea id="code-input" spellcheck="false"></textarea>
+        </div>
+    </div>
+    
+    <div class="panel-footer">
+        <button id="btn-preview">PREVIEW</button>
+        <button id="btn-render">EXPORT</button>
+    </div>
+</div>
+
+<script>
+    // --- ДЕФОЛТНЫЙ КОД (Идеально плавный круг с математически точным хвостом в 360 градусов) ---
+    const defaultGenerativeCode = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Perfect Neon Circle Flow</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"><\/script>
+  <style>
+    body { margin: 0; padding: 0; background-color: #000000; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script>
+    let t = 0;
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      colorMode(HSB, 360, 100, 100, 100);
+      frameRate(60);
+    }
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+    }
+    function draw() {
+      // ПОЛНОСТЬЮ очищаем фон
+      background(0); 
+      
+      let cx = width / 2;
+      let cy = height / 2;
+      let radius = min(cx, cy) * 0.4;
+      
+      noFill();
+      strokeWeight(4);
+
+      // ПАРАМЕТРИЧЕСКИЙ ХВОСТ
+      let tailSteps = 600; // Увеличили плотность для большей гладкости
+      let tailLength = TWO_PI; // СТРОГО 2*PI (полный круг в радианах), чтобы кольцо замкнулось идеально!
+      
+      for (let i = tailSteps; i >= 0; i--) {
+          let pastT = t - (i / tailSteps) * tailLength;
+          if (pastT < 0) continue; 
+          
+          let currentHue = (pastT * 40) % 360;
+          
+          // Экспоненциальное затухание
+          let normalizedProgress = 1 - (i / tailSteps); 
+          let alpha = pow(normalizedProgress, 2) * 100; 
+          
+          stroke(currentHue, 100, 100, alpha);
+          circle(cx + cos(pastT) * radius, cy + sin(pastT) * radius, 100);
+      }
+      
+      t += 0.05;
+    }
+  <\/script>
+</body>
+</html>`;
+
+    // --- ЭЛЕМЕНТЫ UI ---
+    const centerTriggerZone = document.getElementById('center-trigger-zone');
+    const centerBtn = document.getElementById('center-btn');
+    const sidePanel = document.getElementById('side-panel');
+    const btnClosePanel = document.getElementById('btn-close-panel');
+    const frameContainer = document.getElementById('frame-container');
+    
+    const btnPreview = document.getElementById('btn-preview');
+    const btnRender = document.getElementById('btn-render');
+    const btnReset = document.getElementById('btn-reset');
+    const btnCopy = document.getElementById('btn-copy');
+    const btnPaste = document.getElementById('btn-paste');
+    const codeInput = document.getElementById('code-input');
+    const recordIndicator = document.getElementById('record-indicator');
+    
+    const resSelect = document.getElementById('ctrl-resolution');
+    const formatSelect = document.getElementById('ctrl-format');
+    const fpsSelect = document.getElementById('ctrl-fps');
+    const durationSelect = document.getElementById('ctrl-duration');
+    const filenameInput = document.getElementById('ctrl-filename');
+    
+    const urlInjectInput = document.getElementById('ctrl-url-inject');
+    const btnFetchUrl = document.getElementById('btn-fetch-url');
+
+    const iframeWrapper = document.getElementById('frame-wrapper');
+    const iframe = document.getElementById('render-frame');
+
+    // --- CUSTOM MODAL LOGIC ---
+    const customModal = document.getElementById('custom-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalDesc = document.getElementById('modal-desc');
+    const modalClose = document.getElementById('modal-close');
+
+    function showModal(title, text, isWarning = false) {
+        const color = isWarning ? '#ffcc00' : '#ff0044';
+        modalTitle.innerText = title;
+        modalTitle.style.color = color;
+        customModal.querySelector('.modal-box').style.borderColor = color;
+        customModal.querySelector('button').style.backgroundColor = color;
+        customModal.querySelector('button').style.color = isWarning ? '#000' : '#fff';
+        // ИСПРАВЛЕНО: Используем innerText вместо innerHTML, чтобы тег <canvas> не исчезал!
+        modalDesc.innerText = text; 
+        customModal.style.display = 'flex';
+    }
+    modalClose.onclick = () => customModal.style.display = 'none';
+
+    // Переменные для записи через MediaRecorder
+    let mediaRecorder;
+    let recordedChunks = [];
+    let isRecordingMode = false;
+    let pendingRecord = false;
+    let recTimerInterval;
+    let recAutoStopTimeout;
+    let recSeconds = 0;
+
+    // Инициализация
+    codeInput.value = defaultGenerativeCode;
+
+    // Открытие / Закрытие боковой панели
+    centerBtn.addEventListener('click', () => {
+        sidePanel.classList.add('open');
+        centerTriggerZone.style.display = 'none';
+        updateIframeSize();
+    });
+
+    btnClosePanel.addEventListener('click', () => {
+        sidePanel.classList.remove('open');
+        centerTriggerZone.style.display = 'flex';
+        updateIframeSize();
+    });
+
+    // Поддержка кнопки TAB в редакторе
+    codeInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + "  " + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 2;
+        }
+    });
+
+    btnReset.addEventListener('click', () => { 
+        codeInput.value = defaultGenerativeCode; 
+        urlInjectInput.value = "";
+        runCode();
+    });
+
+    btnCopy.addEventListener('click', () => {
+        codeInput.select();
+        document.execCommand('copy');
+        window.getSelection().removeAllRanges();
+        
+        const originalText = btnCopy.innerText;
+        btnCopy.innerText = 'COPIED!';
+        setTimeout(() => { btnCopy.innerText = originalText; }, 1500);
+    });
+
+    // Автоматический запуск рендера при ручной вставке через Cmd+V
+    codeInput.addEventListener('paste', () => {
+        setTimeout(runCode, 50); // Небольшая задержка, чтобы текст успел вставиться в поле
+    });
+
+    btnPaste.addEventListener('click', async () => {
+        codeInput.focus();
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                // При нажатии PASTE логично полностью заменить код
+                codeInput.value = text;
+                runCode();
+                
+                const originalText = btnPaste.innerText;
+                btnPaste.innerText = 'PASTED!';
+                setTimeout(() => { btnPaste.innerText = originalText; }, 1500);
+            }
+        } catch (err) {
+            // Очищаем окно, чтобы избежать каши из старого и нового кода
+            codeInput.value = '';
+            runCode(); // Сбрасываем превью (появится темный фон)
+            
+            // Элегантно просим нажать Cmd+V
+            const originalText = btnPaste.innerText;
+            btnPaste.innerText = 'PRESS CMD+V';
+            btnPaste.style.color = '#ffcc00';
+            setTimeout(() => { 
+                btnPaste.innerText = originalText; 
+                btnPaste.style.color = '';
+            }, 3000);
+        }
+    });
+
+    btnPreview.addEventListener('click', () => {
+        runCode();
+    });
+
+    // Остановка рендера по клику на индикатор
+    recordIndicator.addEventListener('click', () => {
+        if (isRecordingMode) stopRecording();
+    });
+
+    // --- ЛОГИКА ПАРСИНГА С ЧУЖИХ САЙТОВ ---
+    btnFetchUrl.addEventListener('click', async () => {
+        const targetUrl = urlInjectInput.value.trim();
+        if (!targetUrl) return;
+
+        try {
+            btnFetchUrl.classList.add('btn-fetching');
+
+            let htmlCode = null;
+            
+            // Расширенный список прокси для обхода CORS
+            const proxies = [
+                { url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, isJson: true },
+                { url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`, isJson: false },
+                { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, isJson: false }
+            ];
+
+            let success = false;
+
+            for (let proxy of proxies) {
+                try {
+                    const response = await fetch(proxy.url);
+                    if (!response.ok) continue;
+
+                    if (proxy.isJson) {
+                        const data = await response.json();
+                        if (data.contents) {
+                            htmlCode = data.contents;
+                            success = true;
+                            break;
+                        }
+                    } else {
+                        htmlCode = await response.text();
+                        if (htmlCode) {
+                            success = true;
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`Proxy ${proxy.url} failed. Trying next...`);
+                }
+            }
+
+            if (!success || !htmlCode) {
+                throw new Error('FETCH_BLOCKED');
+            }
+
+            // Определяем базовый путь, чтобы относительные ссылки (типа src="main.js") не сломались
+            let urlObj = new URL(targetUrl);
+            let basePath = urlObj.href;
+            if (!basePath.endsWith('/')) {
+                if (urlObj.pathname.split('/').pop().includes('.')) {
+                    basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
+                } else {
+                    basePath += '/';
+                }
+            }
+
+            // Магия: вставляем тег <base>, который заставит iframe думать, что он работает на сервере автора
+            const baseTag = `<base href="${basePath}">\n`;
+            if (htmlCode.match(/<head[^>]*>/i)) {
+                htmlCode = htmlCode.replace(/(<head[^>]*>)/i, `$1\n${baseTag}`);
+            } else {
+                htmlCode = baseTag + htmlCode;
+            }
+
+            codeInput.value = htmlCode;
+            runCode(); // Сразу запускаем
+
+            btnFetchUrl.classList.remove('btn-fetching');
+            btnFetchUrl.innerText = 'OK!';
+            btnFetchUrl.style.color = '#00ffa5';
+            btnFetchUrl.style.borderColor = '#00ffa5';
+            setTimeout(() => { 
+                btnFetchUrl.innerText = 'FETCH'; 
+                btnFetchUrl.style.color = '';
+                btnFetchUrl.style.borderColor = '';
+            }, 2000);
+
+        } catch (err) {
+            console.error(err);
+            if (err.message === 'FETCH_BLOCKED' || err.message === 'Failed to fetch') {
+                showModal("NETWORK ERROR (CORS)", "Browser sandbox is blocking external requests.\n\nHOW TO FIX:\n1. Click 'COPY' to copy your code.\n2. Save it as an HTML file on your computer.\n3. Open the file in Chrome or Safari.\n\nWhen run locally, the site parser will work perfectly!", true);
+            } else {
+                showModal("FETCH ERROR", "Failed to load the code. The site is blocking the request or the proxy servers are temporarily offline.");
+            }
+            btnFetchUrl.classList.remove('btn-fetching');
+            btnFetchUrl.innerText = 'ERROR';
+            btnFetchUrl.style.color = '#ff0044';
+            btnFetchUrl.style.borderColor = '#ff0044';
+            setTimeout(() => { 
+                btnFetchUrl.innerText = 'FETCH'; 
+                btnFetchUrl.style.color = '';
+                btnFetchUrl.style.borderColor = '';
+            }, 3000);
+        }
+    });
+
+    // --- ЛОГИКА МАСШТАБИРОВАНИЯ ---
+    function updateIframeSize() {
+        const res = resSelect.value;
+        const availableWidth = window.innerWidth;
+        const availableHeight = window.innerHeight;
+
+        if (res === 'FIT') {
+            iframe.style.width = availableWidth + 'px';
+            iframe.style.height = availableHeight + 'px';
+            iframeWrapper.style.transform = 'none';
+        } else {
+            const [w, h] = res.split('x').map(Number);
+            iframe.style.width = w + 'px';
+            iframe.style.height = h + 'px';
+            
+            const scaleW = availableWidth / w;
+            const scaleH = availableHeight / h;
+            const scale = Math.min(scaleW, scaleH) * 0.92; 
+            
+            iframeWrapper.style.transform = `scale(${Math.min(scale, 1)})`; 
+        }
+    }
+
+    window.addEventListener('resize', updateIframeSize);
+    
+    resSelect.addEventListener('change', () => {
+        if (resSelect.value === '3840x2160') {
+            document.getElementById('4k-warning').style.display = 'block';
+        } else {
+            document.getElementById('4k-warning').style.display = 'none';
+        }
+        updateIframeSize();
+    });
+
+    function runCode() {
+        let code = codeInput.value;
+        
+        // Защита от ослепляющего белого экрана при пустом коде
+        if (code.trim() === '') {
+            code = '<style>body { background-color: #080808; margin: 0; }</style>';
+        } else {
+            // Умный инжект черного фона (fallback)
+            // Многие старые проекты не прописывают фон явно, из-за чего на кастомных разрешениях
+            // вылезает белое "каше". Мы вставляем черный фон в начало <head>. 
+            // Если у автора есть свой цветной фон в его стилях, он перекроет наш (благодаря CSS cascade).
+            const fallbackBg = `<style>html, body { background-color: #000000; }</style>\n`;
+            if (code.match(/<head[^>]*>/i)) {
+                code = code.replace(/(<head[^>]*>)/i, `$1\n${fallbackBg}`);
+            } else {
+                code = fallbackBg + code;
+            }
+        }
+        
+        updateIframeSize();
+        iframe.srcdoc = code;
+    }
+
+    // --- ЛОГИКА ЗАПИСИ (MEDIA RECORDER) ---
+    function formatTime(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = (sec % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    btnRender.addEventListener('click', () => {
+        const format = formatSelect.value;
+        
+        // Предохранитель для неподдерживаемых форматов
+        if (['lottie', 'gif', 'svg', 'canvas', 'html'].includes(format)) {
+            showModal("FORMAT NOT SUPPORTED", `The ${format.toUpperCase()} format requires specialized conversion libraries (e.g., lottie-web, gif.js) or a backend renderer.\n\nThe built-in MediaRecorder engine only supports direct video recording (MP4 / WEBM).`, true);
+            return;
+        }
+
+        if (!isRecordingMode) {
+            prepareAndStartRecording();
+        } else {
+            stopRecording();
+        }
+    });
+
+    function prepareAndStartRecording() {
+        sidePanel.classList.remove('open');
+        // Убираем центральную кнопку на время записи, чтобы не перекрывала клики по холсту
+        centerTriggerZone.style.display = 'none';
+        updateIframeSize();
+
+        try {
+            iframe.contentWindow.dispatchEvent(new Event('resize'));
+            if (iframe.contentWindow.t !== undefined) iframe.contentWindow.t = 0;
+            if (iframe.contentWindow.frameCount !== undefined) iframe.contentWindow.frameCount = 0;
+        } catch(e) {
+            console.log("Resize dispatch failed:", e);
+        }
+
+        setTimeout(startRecording, 300);
+    }
+
+    function startRecording() {
+        const fps = parseInt(fpsSelect.value) || 60;
+        const durationStr = durationSelect.value;
+        const duration = durationStr === 'manual' ? 0 : parseInt(durationStr);
+        const prefix = filenameInput.value.trim() || 'NAME_RENDER';
+        const format = formatSelect.value;
+
+        const innerDoc = iframe.contentDocument || iframe.contentWindow.document;
+        const targetCanvas = innerDoc.querySelector('canvas');
+
+        if (!targetCanvas) {
+            showModal("RECORDING ERROR", "Could not find a <canvas> tag in your code.\nMake sure the script creates a Canvas element.", true);
+            return;
+        }
+
+        recordedChunks = [];
+        
+        let stream;
+        try {
+            stream = targetCanvas.captureStream(fps); 
+        } catch (err) {
+            showModal("SECURITY ERROR", "This canvas is protected by the browser (CORS Tainted) because it uses cross-origin assets (images/sounds).\n\nDirect video recording is blocked.");
+            stopRecording();
+            return;
+        }
+        
+        let mimeType = '';
+        if (format === 'mp4') {
+            const mp4Codecs = [
+                'video/mp4; codecs="avc1.42E01E"', 
+                'video/mp4; codecs="avc1.4D401E"', 
+                'video/mp4; codecs="avc1.64001E"', 
+                'video/mp4' 
+            ];
+            for (let c of mp4Codecs) {
+                if (MediaRecorder.isTypeSupported(c)) {
+                    mimeType = c;
+                    break;
+                }
+            }
+        } else {
+            const webmCodecs = ['video/webm; codecs=vp9', 'video/webm; codecs=vp8', 'video/webm'];
+            for (let c of webmCodecs) {
+                if (MediaRecorder.isTypeSupported(c)) {
+                    mimeType = c;
+                    break;
+                }
+            }
+        }
+
+        let bitrate = 15000000;
+        if (resSelect.value === '3840x2160') bitrate = 35000000;
+
+        const options = { mimeType: mimeType, videoBitsPerSecond: bitrate }; 
+        
+        try {
+            mediaRecorder = new MediaRecorder(stream, options);
+        } catch (e) {
+            try { 
+                mediaRecorder = new MediaRecorder(stream); 
+            } catch (err) { 
+                showModal("FORMAT ERROR", "Your browser does not support video capture in this format.", true); 
+                return; 
+            }
+        }
+
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = () => {
+            clearInterval(recTimerInterval);
+            clearTimeout(recAutoStopTimeout);
+            
+            const actualMimeType = mediaRecorder.mimeType || 'video/webm';
+            const ext = actualMimeType.includes('mp4') ? 'mp4' : 'webm';
+            const blob = new Blob(recordedChunks, { type: actualMimeType });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `${prefix}_${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        };
+
+        isRecordingMode = true;
+        recSeconds = 0;
+        
+        btnRender.innerHTML = `/ STOP RECORDING /`;
+        btnRender.classList.add('btn-recording');
+
+        recordIndicator.innerText = `🔴 RECORDING... 00:00 /CLICK TO STOP/`;
+        recordIndicator.style.display = 'block';
+        
+        recTimerInterval = setInterval(() => {
+            recSeconds++;
+            const timeStr = formatTime(recSeconds);
+            btnRender.innerHTML = `/ STOP RECORDING / ${timeStr}`;
+            recordIndicator.innerText = `🔴 RECORDING... ${timeStr} /CLICK TO STOP/`;
+        }, 1000);
+
+        if (duration > 0) {
+            recAutoStopTimeout = setTimeout(() => {
+                if (isRecordingMode) stopRecording();
+            }, duration * 1000);
+        }
+
+        mediaRecorder.start(1000);
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isRecordingMode = false;
+        
+        btnRender.innerHTML = 'EXPORT';
+        btnRender.classList.remove('btn-recording');
+        
+        recordIndicator.innerText = '✅ RENDER SAVED TO DOWNLOADS';
+        setTimeout(() => { recordIndicator.style.display = 'none'; }, 3000);
+        
+        // Возвращаем центральную кнопку после завершения записи
+        centerTriggerZone.style.display = 'flex';
+    }
+
+    window.addEventListener('load', () => {
+        updateIframeSize();
+        setTimeout(() => {
+            runCode();
+        }, 100);
+    });
+
+</script>
+</body>
+</html>
